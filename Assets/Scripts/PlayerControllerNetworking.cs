@@ -69,11 +69,11 @@ public partial class PlayerController
         m_playerData.SetData( playerData );
 
         m_playerColourIndicator.material.color = m_colours.GetPlayerColour( playerData.PlayerId );
-        m_empireColourIndicator.material.color = m_colours.GetEmpireColour( playerData.EmpireId );
+        m_empireColourIndicator.material.color = playerData.EmpireSize > 1 ? m_colours.GetEmpireColour( playerData.EmpireId ) : Color.white;
 
         for ( int i = 0; i < m_prestige.Length; i++ )
         {
-            m_prestige[i].SetActive( i == playerData.Rank );
+            m_prestige[i].SetActive( i == playerData.Rank && playerData.EmpireSize > 1 );
         }
 
         if ( m_networkIdentity.isLocalPlayer )
@@ -98,5 +98,11 @@ public partial class PlayerController
         }
 
         // handle rank decor
+    }
+
+    [ClientRpc]
+    public void RpcUpdateDesignConfig ()
+    {
+
     }
 }

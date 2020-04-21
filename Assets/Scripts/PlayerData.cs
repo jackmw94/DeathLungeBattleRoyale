@@ -8,6 +8,7 @@ public class PlayerData
     public int EmpireId = -1;
     public int Rank;
     public int AllowedMovements;
+    public int EmpireSize = 1;
 
     public void SetData( PlayerData other )
     {

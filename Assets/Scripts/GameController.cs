@@ -19,6 +19,8 @@ public class GameController : NetworkBehaviour
     }
 
     [SerializeField] private DesignChoices m_designChoices;
+    [SerializeField] private GameObject m_designChoiceUIRoot;
+    [SerializeField] private GameObject m_mazeRoot;
     [SerializeField] private Text m_gameInfoDisplay;
 
     [SerializeField] private List<PlayerController> m_allPlayers = new List<PlayerController>();
@@ -34,23 +36,26 @@ public class GameController : NetworkBehaviour
     private int m_playerCount = 0;
     private BattleState m_battleTakingPlace = null;
 
-    private bool m_setStartMessage = false;
+    private bool m_initialisedServer = false;
     private bool m_gameInfoTextChanged = false;
     private string m_gameInfo = "";
 
     private bool m_startedGame = false;
 
     public static GameController Instance { get; private set; }
+    public static DesignChoices DesignChoices { get; private set; }
 
     private void Start()
     {
         Instance = this;
+        DesignChoices = m_designChoices;
     }
 
     private void OnDisable()
     {
         Debug.Log( $"GameController disabling - should be at end of hosted game" );
-        m_setStartMessage = false;
+        m_initialisedServer = false;
+        //m_designChoiceUIRoot.SetActive( false );
     }
 
     private void Update()
@@ -59,13 +64,15 @@ public class GameController : NetworkBehaviour
         {
             if ( Input.GetKeyDown( KeyCode.G ) )
             {
+                //m_designChoiceUIRoot.SetActive( false );
                 m_startedGame = true;
                 StartCoroutine( GameLoop() );
             }
 
-            if ( !m_setStartMessage )
+            if ( !m_initialisedServer )
             {
-                m_setStartMessage = true;
+                m_initialisedServer = true;
+                //m_designChoiceUIRoot.SetActive( true );
                 CmdSetGameInfoForServerAndClient( $"Press G to start the game ({m_playerCount} players)", $"Waiting for host to start the game ({m_playerCount} players)");
             }
         }
@@ -443,13 +450,15 @@ public class GameController : NetworkBehaviour
             int generalId = -1;
             for ( int i = 0; i < empirePlayerIds.Count; i++ )
             {
+                var empirePlayer = m_allPlayersData[i];
                 if ( i == 0 )
                 {
-                    generalId = m_allPlayersData[i].PlayerId;
+                    generalId = empirePlayer.PlayerId;
                 }
 
-                m_allPlayersData[i].Rank = Mathf.Min( i, MaxRank );
-                m_allPlayersData[i].EmpireId = generalId;
+                empirePlayer.EmpireSize = empirePlayerIds.Count;
+                empirePlayer.Rank = Mathf.Min( i, MaxRank );
+                empirePlayer.EmpireId = generalId;
             }
 
             // handles empire change of hands
@@ -480,8 +489,16 @@ public class GameController : NetworkBehaviour
 
         var empire = m_playersByEmpire[empireId];
         empire.Add( playerData.PlayerId );
-        playerData.Rank = empire.Count - 1;
-        playerData.EmpireId = empireId;
+
+        // need to do all players to keep empire size up to date
+        for ( int i = 0; i < empire.Count; i++ )
+        {
+            var newEmpirePlayerId = empire[i];
+            var newEmpirePlayer = m_allPlayersData[newEmpirePlayerId];
+            newEmpirePlayer.Rank = Mathf.Min( i, MaxRank );
+            newEmpirePlayer.EmpireId = empireId;
+            newEmpirePlayer.EmpireSize = empire.Count;
+        }
 
         UpdateAllPlayerData();
     }

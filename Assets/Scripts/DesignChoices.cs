@@ -33,6 +33,9 @@ public class DesignChoices : ScriptableObject
     }
 
     [Space( 10 )]
+    public bool UseMaze = false;
+
+    [Space( 10 )]
     public RankStructureSetting RankStructure = RankStructureSetting.ThreeRanks;
 
     [Space( 10 )]
