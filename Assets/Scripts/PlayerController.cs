@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -16,28 +15,31 @@ public partial class PlayerController : NetworkBehaviour
     [SerializeField] private ColourContainer m_colours;
     [SerializeField] private GameObject m_playerIndicatorObject;
 
+    [SerializeField] private MeshRenderer m_playerColourIndicator;
+    [SerializeField] private MeshRenderer m_empireColourIndicator;
+
+    [SerializeField] private GameObject[] m_prestige;
+
     [SerializeField] private float m_height = 0.4f;
     [SerializeField] private float m_moveDuration = 0.5f;
     [SerializeField] private float m_distanceToKick = 0.4f;
     [SerializeField] private float m_startDistance = 15f;
 
-    [SerializeField, SyncVar( hook = "UpdatePlayerId" )] private int m_playerId = 0;
-    [SerializeField] private int m_empireId = -1;
+    [SerializeField] private PlayerData m_playerData = new PlayerData();
 
-    [SerializeField, SyncVar( hook = "UpdateEmpireRank" )] private int m_rank = 0;
-
-    [SerializeField, SyncVar( hook = "UpdateAllowedMovements" )] private int m_allowedMovements = 0;
-
-    public int PlayerId => m_playerId;
-    public int EmpireId => m_empireId;
-    public int Rank => m_rank;
-    public int AllowedMoves => m_allowedMovements;
-    public Vector3 Position => m_transform.position;
-
-    private Material m_playerColourIndicator;
+    private bool m_movementDisabledUntilDataUpdated = false;
+    private bool m_hasSetData = false;
     private Transform m_transform;
 
-    public static int PlayerCount = 0;
+    public PlayerData PlayerData => m_playerData;
+
+    private int PlayerId => m_playerData.PlayerId;
+    private int EmpireId => m_playerData.EmpireId;
+    private int Rank => m_playerData.Rank;
+    private int AllowedMoves => m_playerData.AllowedMovements;
+    private Vector3 Position => m_transform.position;
+
+    private static int PlayerCount = 0;
 
     private void Start()
     {
@@ -49,15 +51,14 @@ public partial class PlayerController : NetworkBehaviour
         {
             CameraController.SetFollowTarget( m_transform );
             m_playerInput.PerformAction += PerformAction;
-            CmdSetPlayerIndex();
+            CmdRegisterPlayer();
         }
         else
         {
-            UpdatePlayerId( m_playerId );
             Destroy( m_playerInput );
         }
 
-        m_moveIndicator.SetMoves( m_allowedMovements );
+        m_moveIndicator.SetMoves( 0 );
     }
 
     private void OnDestroy()
@@ -69,34 +70,6 @@ public partial class PlayerController : NetworkBehaviour
         }
     }
 
-    private void Update()
-    {
-        if ( m_networkIdentity.isLocalPlayer )
-        {
-            if ( Input.GetKeyDown( KeyCode.U ) )
-            {
-                CmdSetAllowedMoves( m_allowedMovements + 2 );
-                m_moveIndicator.SetMoves( m_allowedMovements );
-            }
-
-            m_playerInput.enabled = m_allowedMovements > 0;
-        }
-    }
-    
-    private void UpdatePlayerId( int value )
-    {
-        Debug.Log( $"Updating player Id on {gameObject.name} to {value}" );
-        gameObject.name = $"Player {value}";
-        m_playerId = value;
-        m_playerColourIndicator = m_playerIndicatorObject.GetComponent<MeshRenderer>().material;
-        m_playerColourIndicator.color = m_colours.GetColour( m_playerId );
-
-        if ( m_networkIdentity.isLocalPlayer )
-        {
-            m_transform.position = GetStartPosition( m_playerId );
-        }
-    }
-    
     private void RespondToMoveRequest( int move )
     {
         CmdRespondToMoveRequest( move );
@@ -106,35 +79,29 @@ public partial class PlayerController : NetworkBehaviour
     {
         CmdRespondToFightRequest( fightResponse );
     }
-    
-    private void UpdateEmpireRank( int value )
-    {
-        m_rank = value;
-    }
-
-    private void UpdateAllowedMovements( int value )
-    {
-        m_allowedMovements = value;
-        m_moveIndicator.SetMoves( m_allowedMovements );
-    }
 
     private void PerformAction( bool move, Vector2 movement )
     {
-        Debug.Assert( m_allowedMovements > 0, "Zero moves left!" );
+        Debug.Assert( AllowedMoves > 0, "Zero moves left!" );
 
-        if ( move )
+        if ( !m_movementDisabledUntilDataUpdated && AllowedMoves > 0 )
         {
-            StartCoroutine( MoveGradually( new Vector3( movement.x, 0f, movement.y ) ) );
-            CmdSetAllowedMoves( m_allowedMovements - 1 );
-        }
-        else
-        {
-            var from = new Vector2( m_transform.position.x, m_transform.position.z );
-            var to = new Vector2( m_transform.position.x + movement.x, m_transform.position.z + movement.y );
-            if ( RouteInvolvesKick( m_empireId, from, to, out var player ) )
+            if ( move )
             {
-                CmdKickPlayer( player.PlayerId );
-                CmdSetAllowedMoves( 0 );
+                StartCoroutine( MoveGradually( new Vector3( movement.x, 0f, movement.y ) ) );
+                m_movementDisabledUntilDataUpdated = true;
+                CmdMoveTaken( false );
+            }
+            else
+            {
+                var from = new Vector2( m_transform.position.x, m_transform.position.z );
+                var to = new Vector2( m_transform.position.x + movement.x, m_transform.position.z + movement.y );
+                if ( RouteInvolvesKick( EmpireId, from, to, out var player ) )
+                {
+                    CmdKickPlayer( player.PlayerId );
+                    m_movementDisabledUntilDataUpdated = true;
+                    CmdMoveTaken( true );
+                }
             }
         }
     }
@@ -155,18 +122,19 @@ public partial class PlayerController : NetworkBehaviour
             m_transform.position = Vector3.Lerp( startPos, endPos, fract );
         } while ( fract < 1f );
 
-        m_playerInput.enabled = true;
+        m_playerInput.enabled = AllowedMoves > 0;
     }
 
-    public bool RouteInvolvesKick( int playerEmpireId, Vector2 from, Vector2 to, out PlayerController kickedPlayer )
+    private bool RouteInvolvesKick( int playerEmpireId, Vector2 from, Vector2 to, out PlayerController kickedPlayer )
     {
+        // replace with raycast solution that looks for obstacles too
+
         var players = FindObjectsOfType<PlayerController>();
-        for ( int i = 0; i < players.Length; i++ )
+        foreach ( var player in players )
         {
-            var player = players[i];
             if ( player.EmpireId != playerEmpireId )
             {
-                Vector2 playerPos = new Vector2(player.Position.x, player.Position.z);
+                Vector2 playerPos = new Vector2( player.Position.x, player.Position.z );
                 (float f, Vector2 p) = DistanceFromPointToLine( from, to, playerPos );
                 Debug.Log( $"Distance from line ({from} -> {to}) to player {player.gameObject.name} (at {playerPos}) is {f}. Closest point is {p}" );
                 if ( f <= m_distanceToKick )
@@ -181,7 +149,7 @@ public partial class PlayerController : NetworkBehaviour
         return false;
     }
 
-    public static (float, Vector2) DistanceFromPointToLine( Vector2 lineStart, Vector2 lineEnd, Vector2 point )
+    private static (float, Vector2) DistanceFromPointToLine( Vector2 lineStart, Vector2 lineEnd, Vector2 point )
     {
         Vector2 closestPoint = Vector2.zero;
 
@@ -232,13 +200,4 @@ public partial class PlayerController : NetworkBehaviour
 
         return new Vector3( offset.x, 0f, offset.y );
     }
-}
-
-[Serializable]
-public class PlayerData
-{
-    public int PlayerId;
-    public int EmpireId;
-    public int Rank;
-    public int AllowedMovements;
 }

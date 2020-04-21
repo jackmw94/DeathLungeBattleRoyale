@@ -4,31 +4,24 @@ using UnityEngine.Networking;
 public partial class PlayerController
 {
     [Command]
+    private void CmdMoveTaken( bool hasKicked )
+    {
+        var gameController = GameController.Instance;
+        gameController.PlayerMoveTaken( m_playerData.PlayerId, hasKicked );
+    }
+
+    [Command]
     private void CmdKickPlayer( int kickPlayerId )
     {
         var gameController = GameController.Instance;
-        gameController.QueueBattle( this, kickPlayerId );
+        gameController.QueueBattle( m_playerData.PlayerId, kickPlayerId );
     }
 
     [Command]
     private void CmdRespondToFightRequest( FightUI.FightChoice fightResponse )
     {
         var gameController = GameController.Instance;
-        gameController.SubmitFightChoice( this, fightResponse );
-    }
-
-    [Command]
-    public void CmdSetEmpire( int empireId )
-    {
-        RpcSetEmpire( empireId );
-
-    }
-
-    [ClientRpc]
-    private void RpcSetEmpire( int empireId )
-    {
-        m_empireId = empireId;
-        m_playerColourIndicator.color = m_colours.GetColour( m_empireId );
+        gameController.SubmitFightChoice( m_playerData.PlayerId, fightResponse );
     }
 
     [Command]
@@ -36,7 +29,7 @@ public partial class PlayerController
     {
         Debug.Log( $"Player {PlayerId} is responding to move request with {moves}" );
         var gameController = GameController.Instance;
-        gameController.SubmitMoveCount( this, moves );
+        gameController.SubmitMoveCount( m_playerData.PlayerId, moves );
     }
 
     [ClientRpc]
@@ -51,7 +44,7 @@ public partial class PlayerController
     [ClientRpc]
     public void RpcResetPosition()
     {
-        m_transform.position = GetStartPosition( m_playerId );
+        m_transform.position = GetStartPosition( PlayerId );
     }
 
     [ClientRpc]
@@ -64,23 +57,46 @@ public partial class PlayerController
     }
 
     [Command]
-    private void CmdSetPlayerIndex()
+    private void CmdRegisterPlayer()
     {
-        var index = GameController.Instance.RegisterPlayer( this );
-        m_playerId = index;
-        m_empireId = index;
+        GameController.Instance.RegisterPlayer( this );
     }
 
-    [Command]
-    public void CmdSetAllowedMoves( int moves )
+    [ClientRpc]
+    public void RpcUpdatePlayerData( string serializedPlayerData )
     {
-        moves = Mathf.Clamp( moves, 0, MaxMoves );
-        m_allowedMovements = moves;
-    }
+        var playerData = PlayerData.Deserialize( serializedPlayerData );
+        m_playerData.SetData( playerData );
 
-    [Command]
-    public void CmdSetPlayerRank( int rank )
-    {
-        m_rank = rank;
+        m_playerColourIndicator.material.color = m_colours.GetPlayerColour( playerData.PlayerId );
+        m_empireColourIndicator.material.color = m_colours.GetEmpireColour( playerData.EmpireId );
+
+        for ( int i = 0; i < m_prestige.Length; i++ )
+        {
+            m_prestige[i].SetActive( i == playerData.Rank );
+        }
+
+        if ( m_networkIdentity.isLocalPlayer )
+        {
+            bool inputEnabled = AllowedMoves > 0;
+            Debug.Log( $"Setting player with id {playerData.PlayerId}'s input to be {inputEnabled}" );
+            m_playerInput.enabled = inputEnabled;
+        }
+
+        m_movementDisabledUntilDataUpdated = false;
+
+        m_moveIndicator.SetMoves( AllowedMoves );
+
+        if ( !m_hasSetData )
+        {
+            m_hasSetData = true;
+            if ( m_networkIdentity.isLocalPlayer )
+            {
+                m_transform.position = GetStartPosition( PlayerId );
+            }
+            gameObject.name = $"Player {PlayerId}";
+        }
+
+        // handle rank decor
     }
 }

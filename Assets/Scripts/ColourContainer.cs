@@ -1,12 +1,29 @@
 ﻿using UnityEngine;
+using UnityEngine.Serialization;
 
 [CreateAssetMenu(fileName = "ColourContainer", menuName = "Create colour container")]
 public class ColourContainer : ScriptableObject
 {
-    [SerializeField] private Color[] m_colours;
+    [SerializeField, FormerlySerializedAs("m_colours")] private Color[] m_playerColours;
 
-    public Color GetColour ( int index )
+    [SerializeField] private Color[] m_empireColours;
+
+    private int m_offset = 2;
+
+    public void ChangeOffset ()
     {
-        return m_colours[index];
+        m_offset = Random.Range( 0, 8 );
+    }
+
+    public Color GetPlayerColour ( int index )
+    {
+        var colourIndex = (index + m_offset) % m_playerColours.Length;
+        return m_playerColours[colourIndex];
+    }
+
+    public Color GetEmpireColour( int index )
+    {
+        var colourIndex = ( index + m_offset ) % m_playerColours.Length;
+        return m_empireColours[colourIndex];
     }
 }

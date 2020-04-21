@@ -7,56 +7,66 @@ using UnityEngine.UI;
 
 public class GameController : NetworkBehaviour
 {
-    private enum GameState
-    {
-        RequestMoveCount,
-        EmpiresMoving,
-        PlayerBattle
-    }
+    // want to change this based on design choice
+    private const int MaxRank = 2;
 
     private class BattleState
     {
-        public PlayerController Attacker;
-        public PlayerController Defender;
+        public int AttackerId;
+        public int DefenderId;
         public FightUI.FightChoice AttackerChoice = FightUI.FightChoice.None;
         public FightUI.FightChoice DefenderChoice = FightUI.FightChoice.None;
     }
 
+    [SerializeField] private DesignChoices m_designChoices;
     [SerializeField] private Text m_gameInfoDisplay;
 
     [SerializeField] private List<PlayerController> m_allPlayers = new List<PlayerController>();
+    [SerializeField] private List<PlayerData> m_allPlayersData = new List<PlayerData>();
 
-    private readonly Queue<(PlayerController, PlayerController)> m_battleQueue = new Queue<(PlayerController, PlayerController)>();
-    private readonly Dictionary<int, List<PlayerController>> m_playersByEmpire = new Dictionary<int, List<PlayerController>>();
+    private readonly Queue<(int, int)> m_battleQueue = new Queue<(int, int)>();
+    private readonly Dictionary<int, List<int>> m_playersByEmpire = new Dictionary<int, List<int>>();
 
-    private readonly Dictionary<PlayerController, int> m_requestMovesFromSet = new Dictionary<PlayerController, int>();
+    // key is player id, value is requested number of moves
+    private readonly Dictionary<int, int> m_requestMovesFromSet = new Dictionary<int, int>();
     private int m_moveResponses = 0;
 
-    private GameState m_gameState;
     private int m_playerCount = 0;
     private BattleState m_battleTakingPlace = null;
 
+    private bool m_setStartMessage = false;
     private bool m_gameInfoTextChanged = false;
     private string m_gameInfo = "";
 
     private bool m_startedGame = false;
 
-    private static GameController m_instance;
-    public static GameController Instance => m_instance;
+    public static GameController Instance { get; private set; }
 
     private void Start()
     {
-        m_instance = this;
+        Instance = this;
+    }
+
+    private void OnDisable()
+    {
+        Debug.Log( $"GameController disabling - should be at end of hosted game" );
+        m_setStartMessage = false;
     }
 
     private void Update()
     {
-        if ( Input.GetKeyDown( KeyCode.G ) )
+        if ( !m_startedGame && isServer )
         {
-            if ( !m_startedGame )
+            if ( Input.GetKeyDown( KeyCode.G ) )
             {
                 m_startedGame = true;
                 StartCoroutine( GameLoop() );
+            }
+
+            if ( !m_setStartMessage )
+            {
+                m_setStartMessage = true;
+                CmdSetGameInfoForServerAndClient( $"Press G to start the game ({m_playerCount} players)", $"Waiting for host to start the game ({m_playerCount} players)");
             }
         }
 
@@ -65,8 +75,29 @@ public class GameController : NetworkBehaviour
             m_gameInfoTextChanged = false;
             m_gameInfoDisplay.text = m_gameInfo;
         }
+    }
 
-        
+    private void UpdateAllPlayerData()
+    {
+        Debug.Log( $"Updating all players' data" );
+        for ( int i = 0; i < m_allPlayers.Count; i++ )
+        {
+            var player = m_allPlayers[i];
+            var data = m_allPlayersData[i];
+            var serialized = data.Serialize();
+            Debug.Log( $"Sending serialized data : {serialized}" );
+            player.RpcUpdatePlayerData( serialized );
+        }
+    }
+
+    private void UpdatePlayerData( int playerId )
+    {
+        Debug.Log( $"Updating player id {playerId}'s data" );
+        var player = m_allPlayers[playerId];
+        var data = m_allPlayersData[playerId];
+        var serialized = data.Serialize();
+        Debug.Log( $"Sending serialized data : {serialized}" );
+        player.RpcUpdatePlayerData( serialized );
     }
 
     private IEnumerator GameLoop()
@@ -74,59 +105,13 @@ public class GameController : NetworkBehaviour
         Debug.Log( $"Starting game loop!" );
         while ( true )
         {
-            // get all empire leaders
-            m_requestMovesFromSet.Clear();
-            foreach ( KeyValuePair<int, List<PlayerController>> keyValuePair in m_playersByEmpire )
-            {
-                bool foundLeader = false;
-                foreach ( PlayerController playerController in keyValuePair.Value )
-                {
-                    if ( playerController.Rank == 0 )
-                    {
-                        Debug.AssertFormat( !foundLeader, "Found multiple leaders in empire of ID {0}", keyValuePair.Key );
-                        m_requestMovesFromSet.Add( playerController, -1 );
-                        foundLeader = true;
-                    }
-                }
-            }
-            m_moveResponses = 0;
-
-            string info = "Requesting moves from ";
-            // request moves from each
-            foreach ( KeyValuePair<PlayerController, int> keyValuePair in m_requestMovesFromSet )
-            {
-                info = $"{info} {keyValuePair.Key.PlayerId},";
-                var player = keyValuePair.Key;
-                player.RpcRequestMoves();
-            }
-            CmdSetGameInfo( info );
-
+            RequestMoves();
             Debug.Log( $"Sent all requests" );
 
-            int tempMoveResponses = 0;
-            // wait until we have all returned
-            while ( m_moveResponses < m_requestMovesFromSet.Count )
-            {
-                if ( m_moveResponses != tempMoveResponses )
-                {
-                    info = "Still waiting for moves from ";
-                    foreach ( KeyValuePair<PlayerController, int> keyValuePair in m_requestMovesFromSet )
-                    {
-                        if ( keyValuePair.Value == -1 )
-                        {
-                            info = $"{info} {keyValuePair.Key.PlayerId},";
-                        }
-                    }
-                    CmdSetGameInfo( info );
-                    tempMoveResponses = m_moveResponses;
-                }
-                // tell players we're waiting for moves
-                yield return null;
-            }
-
+            yield return WaitForMoveResponses();
             Debug.Log( $"Finished waiting for move choices" );
 
-            // show all players move counts
+            // show all players move counts ?
 
             // remove duplicates / run move policy
             int[] moves = new int[PlayerController.MaxMoves];
@@ -137,26 +122,9 @@ public class GameController : NetworkBehaviour
             }
 
             // get movement order
-            for ( int i = 1; i <= PlayerController.MaxMoves; i++ )
-            {
-                Debug.Log( $"Filtering move choices : moves[{i - 1}] (for choice {i}) has count of {moves[i - 1]}" );
-                if ( moves[i - 1] == 1 )
-                {
-                    foreach ( KeyValuePair<PlayerController, int> keyValuePair in m_requestMovesFromSet )
-                    {
-                        if ( keyValuePair.Value == i )
-                        {
-                            Debug.Log( $"Updating allowed move to {i} for empire with id {keyValuePair.Key.EmpireId}" );
-                            // send moves to all empire in rank order
-                            CmdSetGameInfo( $"Empire #{keyValuePair.Key.EmpireId} is moving" );
-                            yield return UpdateAllowedMovesForEmpire( keyValuePair.Key.EmpireId, i );
-                            Debug.Log( $"Returned from doing moves for empire {keyValuePair.Key.EmpireId}" );
-                            break;
-                        }
-                    }
-                }
-            }
+            yield return RunPlayerMovement( moves );
 
+            // wait just for nicer flow
             yield return new WaitForSecondsRealtime( 1.5f );
 
             // check for end game state
@@ -164,31 +132,138 @@ public class GameController : NetworkBehaviour
         }
     }
 
-    [Command]
-    private void CmdSetGameInfo( string s )
+    public void RegisterPlayer( PlayerController player )
     {
-        RpcSetGameInfo( s );
+        var playerId = m_playerCount;
+
+        m_allPlayers.Add( player );
+        m_allPlayersData.Add( new PlayerData()
+        {
+            PlayerId = playerId,
+            EmpireId = playerId,
+            Rank = 0,
+            AllowedMovements = 0
+        } );
+
+        SetPlayerEmpire( playerId, playerId );
+        UpdateAllPlayerData();
+        
+        m_playerCount++;
+
+        string plural = m_playerCount == 1 ? "" : "s";
+        CmdSetGameInfoForServerAndClient( $"Press G to start the game ({m_playerCount} player{plural})", $"Waiting for host to start the game ({m_playerCount} player{plural})" );
     }
 
-    [ClientRpc]
-    private void RpcSetGameInfo( string s )
+    private void RequestMoves()
     {
-        m_gameInfoTextChanged = true;
-        m_gameInfo = s;
+        // get all empire leaders
+        m_requestMovesFromSet.Clear();
+        foreach ( KeyValuePair<int, List<int>> keyValuePair in m_playersByEmpire )
+        {
+            bool foundLeader = false;
+            foreach ( int playerId in keyValuePair.Value )
+            {
+                var playerData = m_allPlayersData[playerId];
+                if ( playerData.Rank == 0 )
+                {
+                    Debug.AssertFormat( !foundLeader, "Found multiple leaders in empire of ID {0}", keyValuePair.Key );
+                    m_requestMovesFromSet.Add( playerData.PlayerId, -1 );
+                    foundLeader = true;
+                }
+            }
+        }
+        m_moveResponses = 0;
+
+        string info = "Requesting moves from ";
+        // request moves from each
+        foreach ( KeyValuePair<int, int> playerIdToNumMoves in m_requestMovesFromSet )
+        {
+            var playerId = playerIdToNumMoves.Key;
+            info = $"{info} {playerId},";
+            m_allPlayers[playerId].RpcRequestMoves();
+        }
+        CmdSetGameInfo( info );
     }
 
-    private IEnumerator UpdateAllowedMovesForEmpire( int empireId, int moveCount )
+    public void SubmitMoveCount( int playerId, int moves )
+    {
+        bool hasPlayer = m_requestMovesFromSet.ContainsKey( playerId );
+        Debug.Assert( hasPlayer, "Could not find player in request moves set" );
+        if ( hasPlayer )
+        {
+            m_requestMovesFromSet[playerId] = moves;
+            m_moveResponses++;
+            Debug.Log( $"Responding to move request {m_moveResponses} of {m_requestMovesFromSet.Count} players have responded" );
+        }
+    }
+
+    private IEnumerator WaitForMoveResponses()
+    {
+        int tempMoveResponses = 0;
+        string info = "";
+
+        // wait until we have all returned
+        while ( m_moveResponses < m_requestMovesFromSet.Count )
+        {
+            if ( m_moveResponses != tempMoveResponses )
+            {
+                info = "Still waiting for moves from ";
+                foreach ( KeyValuePair<int, int> playerIdToNumMoves in m_requestMovesFromSet )
+                {
+                    if ( playerIdToNumMoves.Value == -1 )
+                    {
+                        info = $"{info} {playerIdToNumMoves.Key},";
+                    }
+                }
+
+                // tell players we're waiting for moves
+                CmdSetGameInfo( info );
+                tempMoveResponses = m_moveResponses;
+            }
+            yield return null;
+        }
+    }
+
+    private IEnumerator RunPlayerMovement( int[] moves )
+    {
+        for ( int i = 1; i <= PlayerController.MaxMoves; i++ )
+        {
+            Debug.Log( $"Filtering move choices : moves[{i - 1}] (for choice {i}) has count of {moves[i - 1]}" );
+            if ( moves[i - 1] == 1 )
+            {
+                foreach ( KeyValuePair<int, int> playerIdToNumMoves in m_requestMovesFromSet )
+                {
+                    var moveCount = playerIdToNumMoves.Value;
+                    if ( moveCount == i )
+                    {
+                        var playerId = playerIdToNumMoves.Key;
+                        var playerData = m_allPlayersData[playerId];
+                        Debug.Log( $"Updating allowed moves to {i} for player with id {playerData.PlayerId} in empire with id {playerData.EmpireId}" );
+                        // send moves to all empire in rank order
+                        CmdSetGameInfo( $"Empire #{playerData.EmpireId} is moving" );
+                        yield return SetAllowedNumberOfMovesForEmpire( playerData.EmpireId, i );
+                        Debug.Log( $"Returned from doing moves for empire {playerData.EmpireId}" );
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private IEnumerator SetAllowedNumberOfMovesForEmpire( int empireId, int moveCount )
     {
         var players = m_playersByEmpire[empireId];
-        List<PlayerController> waitingForPlayers = new List<PlayerController>();
+        List<PlayerData> waitingForPlayers = new List<PlayerData>();
 
-        var orderedPlayers = players.OrderBy( p => p.Rank ).ToArray();
+        var orderedPlayers = players.Select( p => m_allPlayersData[p] ).OrderBy( p => p.Rank ).ToArray();
         for ( int i = 0; i < orderedPlayers.Length; i++ )
         {
             var player = orderedPlayers[i];
             var rank = player.Rank;
             waitingForPlayers.Add( player );
-            player.CmdSetAllowedMoves( moveCount );
+
+            player.AllowedMovements = moveCount;
+            UpdatePlayerData( player.PlayerId );
 
             if ( i < orderedPlayers.Length - 1 )
             {
@@ -211,7 +286,7 @@ public class GameController : NetworkBehaviour
         }
     }
 
-    private IEnumerator WaitUntilNoMovesAndCheckForBattles( List<PlayerController> players )
+    private IEnumerator WaitUntilNoMovesAndCheckForBattles( List<PlayerData> players )
     {
         Debug.Log( $"Starting waiting for {players.Count} players" );
         bool finished = true;
@@ -224,8 +299,8 @@ public class GameController : NetworkBehaviour
             {
                 Debug.Log( "Found a battle!" );
                 var (attacker, defender) = m_battleQueue.Dequeue();
-                m_battleTakingPlace = new BattleState { Attacker = attacker, Defender = defender };
-                CmdSetGameInfo( $"Battle happening between players {attacker.PlayerId} and {defender.PlayerId}" );
+                m_battleTakingPlace = new BattleState { AttackerId = attacker, DefenderId = defender };
+                CmdSetGameInfo( $"Battle happening between players {attacker} and {defender}" );
                 yield return HandleBattle( attacker, defender );
                 m_battleTakingPlace = null;
                 continue;
@@ -233,9 +308,9 @@ public class GameController : NetworkBehaviour
 
             // are all players done ?
             finished = true;
-            foreach ( PlayerController player in players )
+            foreach ( PlayerData player in players )
             {
-                if ( player.AllowedMoves > 0 )
+                if ( player.AllowedMovements > 0 )
                 {
                     finished = false;
                 }
@@ -245,19 +320,46 @@ public class GameController : NetworkBehaviour
         Debug.Log( $"Finished waiting for moves / battles" );
     }
 
-    private IEnumerator HandleBattle( PlayerController attacker, PlayerController defender )
+    public void PlayerMoveTaken( int playerId, bool hasKicked )
     {
-        attacker.RpcRequestFightResponse();
-        defender.RpcRequestFightResponse();
+        var playerData = m_allPlayersData[playerId];
+        playerData.AllowedMovements = hasKicked ? 0 : playerData.AllowedMovements - 1;
+        UpdatePlayerData( playerId );
+    }
+
+    public void QueueBattle( int attackerId, int defenderId )
+    {
+        m_battleQueue.Enqueue( (attackerId, defenderId) );
+    }
+
+    private IEnumerator HandleBattle( int attackerId, int defenderId )
+    {
+        m_allPlayers[attackerId].RpcRequestFightResponse();
+        m_allPlayers[defenderId].RpcRequestFightResponse();
         while ( m_battleTakingPlace.AttackerChoice == FightUI.FightChoice.None || m_battleTakingPlace.DefenderChoice == FightUI.FightChoice.None )
         {
             yield return null;
         }
-        ResolveFight();
+        ResolveCurrentFight();
         yield return new WaitForSecondsRealtime( 3f );
     }
 
-    private void ResolveFight()
+    public void SubmitFightChoice( int playerId, FightUI.FightChoice fight )
+    {
+        if ( m_battleTakingPlace.AttackerId == playerId )
+        {
+            m_battleTakingPlace.AttackerChoice = fight;
+            return;
+        }
+        if ( m_battleTakingPlace.DefenderId == playerId )
+        {
+            m_battleTakingPlace.DefenderChoice = fight;
+            return;
+        }
+        Debug.LogError( $"Could not find a player with id={playerId} in current battle" );
+    }
+
+    private void ResolveCurrentFight()
     {
         string info = "";
         switch ( m_battleTakingPlace.AttackerChoice )
@@ -271,11 +373,13 @@ public class GameController : NetworkBehaviour
                         break;
                     case FightUI.FightChoice.Paper:
                         info = "Defender won, paper beats rock";
-                        m_battleTakingPlace.Attacker.RpcResetPosition();
+                        var attackerId = m_battleTakingPlace.AttackerId;
+                        m_allPlayers[attackerId].RpcResetPosition();
                         break;
                     case FightUI.FightChoice.Scissors:
                         info = "Attacker won, rock beats scissors";
-                        SetPlayerEmpire( m_battleTakingPlace.Defender, m_battleTakingPlace.Attacker.EmpireId );
+                        var attackerData = m_allPlayersData[m_battleTakingPlace.AttackerId];
+                        SetPlayerEmpire( m_battleTakingPlace.DefenderId, attackerData.EmpireId );
                         break;
                 }
                 break;
@@ -284,7 +388,8 @@ public class GameController : NetworkBehaviour
                 {
                     case FightUI.FightChoice.Rock:
                         info = "Attacker won, paper beats rock";
-                        SetPlayerEmpire( m_battleTakingPlace.Defender, m_battleTakingPlace.Attacker.EmpireId );
+                        var attackerData = m_allPlayersData[m_battleTakingPlace.AttackerId];
+                        SetPlayerEmpire( m_battleTakingPlace.DefenderId, attackerData.EmpireId );
                         break;
                     case FightUI.FightChoice.Paper:
                         // draw
@@ -292,7 +397,8 @@ public class GameController : NetworkBehaviour
                         break;
                     case FightUI.FightChoice.Scissors:
                         info = "Defender won, scissors beats paper";
-                        m_battleTakingPlace.Attacker.RpcResetPosition();
+                        var attackerId = m_battleTakingPlace.AttackerId;
+                        m_allPlayers[attackerId].RpcResetPosition();
                         break;
                 }
                 break;
@@ -301,11 +407,13 @@ public class GameController : NetworkBehaviour
                 {
                     case FightUI.FightChoice.Rock:
                         info = "Defender won, rock beats scissors";
-                        m_battleTakingPlace.Attacker.RpcResetPosition();
+                        var attackerId = m_battleTakingPlace.AttackerId;
+                        m_allPlayers[attackerId].RpcResetPosition();
                         break;
                     case FightUI.FightChoice.Paper:
                         info = "Attacker won, scissors beats paper";
-                        SetPlayerEmpire( m_battleTakingPlace.Defender, m_battleTakingPlace.Attacker.EmpireId );
+                        var attackerData = m_allPlayersData[m_battleTakingPlace.AttackerId];
+                        SetPlayerEmpire( m_battleTakingPlace.DefenderId, attackerData.EmpireId );
                         break;
                     case FightUI.FightChoice.Scissors:
                         // draw
@@ -318,79 +426,97 @@ public class GameController : NetworkBehaviour
         CmdSetGameInfo( info );
     }
 
-    public void SubmitMoveCount( PlayerController player, int moves )
+    private void SetPlayerEmpire( int playerId, int empireId )
     {
-        bool hasPlayer = m_requestMovesFromSet.ContainsKey( player );
-        Debug.Assert( hasPlayer, "Could not find player in request moves set" );
-        if ( hasPlayer )
-        {
-            m_requestMovesFromSet[player] = moves;
-            m_moveResponses++;
-            Debug.Log( $"Responding to move request {m_moveResponses} of {m_requestMovesFromSet.Count} players have responded" );
-        }
-    }
-
-    public void SubmitFightChoice( PlayerController player, FightUI.FightChoice fight )
-    {
-        if ( m_battleTakingPlace.Attacker.PlayerId == player.PlayerId )
-        {
-            m_battleTakingPlace.AttackerChoice = fight;
-            return;
-        }
-        if ( m_battleTakingPlace.Defender.PlayerId == player.PlayerId )
-        {
-            m_battleTakingPlace.DefenderChoice = fight;
-            return;
-        }
-        Debug.LogError( $"Could not find a player with id={player.PlayerId} in current battle" );
-    }
-
-    public int RegisterPlayer( PlayerController player )
-    {
-        m_allPlayers.Add( player );
-        m_playerCount++;
-        SetPlayerEmpire( player, m_playerCount - 1 );
-        return m_playerCount - 1;
-    }
-
-    private void SetPlayerEmpire( PlayerController player, int empireId )
-    {
+        var playerData = m_allPlayersData[playerId];
+        int previousEmpireId = playerData.EmpireId;
+        
         // try remove
-        if ( m_playersByEmpire.ContainsKey( player.EmpireId ) )
+        if ( m_playersByEmpire.ContainsKey( playerData.EmpireId ) )
         {
-            var empireSet = m_playersByEmpire[player.EmpireId];
-            if ( empireSet.Contains( player ) )
+            var empirePlayerIds = m_playersByEmpire[playerData.EmpireId];
+            if ( empirePlayerIds.Contains( playerData.PlayerId ) )
             {
-                empireSet.Remove( player );
+                empirePlayerIds.Remove( playerData.PlayerId );
             }
-            UpdateEmpireAndRankIds( empireSet, player.EmpireId );
+
+            int generalId = -1;
+            for ( int i = 0; i < empirePlayerIds.Count; i++ )
+            {
+                if ( i == 0 )
+                {
+                    generalId = m_allPlayersData[i].PlayerId;
+                }
+
+                m_allPlayersData[i].Rank = Mathf.Min( i, MaxRank );
+                m_allPlayersData[i].EmpireId = generalId;
+            }
+
+            // handles empire change of hands
+            if ( generalId == -1 )
+            {
+                // no more players in empire
+                m_playersByEmpire.Remove( previousEmpireId );
+            }
+            else if ( generalId != previousEmpireId )
+            {
+                if ( m_playersByEmpire.ContainsKey( generalId ) )
+                {
+                    Debug.LogError( $"Empire with id of {generalId} was already present" );
+                    CmdSetGameInfo( $"!Error setting empire ids!" );
+                }
+                m_playersByEmpire.Add( generalId, empirePlayerIds );
+                m_playersByEmpire.Remove( previousEmpireId );
+            }
         }
 
         // try add
         if ( !m_playersByEmpire.ContainsKey( empireId ) )
         {
-            m_playersByEmpire.Add( empireId, new List<PlayerController>() );
+            m_playersByEmpire.Add( empireId, new List<int>() );
         }
 
         // if we want to insert winners into certain ranks, we should do that here
 
         var empire = m_playersByEmpire[empireId];
-        empire.Add( player );
-        UpdateEmpireAndRankIds( empire, empireId );
+        empire.Add( playerData.PlayerId );
+        playerData.Rank = empire.Count - 1;
+        playerData.EmpireId = empireId;
+
+        UpdateAllPlayerData();
     }
 
-    private void UpdateEmpireAndRankIds( List<PlayerController> inEmpire, int empireId )
+    [Command]
+    private void CmdSetGameInfo( string s )
     {
-        for ( int i = 0; i < inEmpire.Count; i++ )
+        RpcSetGameInfo( s );
+    }
+
+    [ClientRpc]
+    private void RpcSetGameInfo( string s )
+    {
+        m_gameInfoTextChanged = true;
+        m_gameInfo = s;
+    }
+
+
+    [Command]
+    private void CmdSetGameInfoForServerAndClient( string server, string client )
+    {
+        RpcSetGameInfoForServerAndClient( server, client );
+    }
+
+    [ClientRpc]
+    private void RpcSetGameInfoForServerAndClient( string server, string client )
+    {
+        m_gameInfoTextChanged = true;
+        if ( isServer )
         {
-            inEmpire[i].CmdSetPlayerRank( i );
-            inEmpire[i].CmdSetEmpire( empireId );
+            m_gameInfo = server;
         }
-    }
-
-    public void QueueBattle( PlayerController attacker, int defenderId )
-    {
-        var defender = m_allPlayers[defenderId];
-        m_battleQueue.Enqueue( (attacker, defender) );
+        else
+        {
+            m_gameInfo = client;
+        }
     }
 }
