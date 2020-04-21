@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using Debug = UnityEngine.Debug;
 
 [CreateAssetMenu( menuName = "Create design choice config", fileName = "DesignChoices" )]
@@ -32,55 +33,72 @@ public class DesignChoices : ScriptableObject
         ContinuousRanks
     }
 
-    [Space( 10 )]
-    public bool UseMaze = false;
+    [Serializable]
+    public class GameRules
+    {
+        [Space( 10 )] public bool UseMaze = false;
+        [Space( 10 )] public RankStructureSetting RankStructure = RankStructureSetting.ThreeRanks;
+        [Space( 10 )] public FightTargetRule FightingRule;
+        
+        public OppositionFightResolutionRule PrivateBeatsOpposingGeneral;
+        [VisibleIf( true, nameof ( RankStructure ), RankStructureSetting.TwoRanks )] public OppositionFightResolutionRule PrivateBeatsOpposingSergeant;
+        public OppositionFightResolutionRule PrivateBeatsOpposingPrivate;
 
-    [Space( 10 )]
-    public RankStructureSetting RankStructure = RankStructureSetting.ThreeRanks;
+        [Space( 10 )]
+        [VisibleIf( true, nameof ( RankStructure ), RankStructureSetting.TwoRanks )] public OppositionFightResolutionRule SergeantBeatsOpposingGeneral;
+        [VisibleIf( true, nameof ( RankStructure ), RankStructureSetting.TwoRanks )] public OppositionFightResolutionRule SergeantBeatsOpposingSergeant;
+        [VisibleIf( true, nameof ( RankStructure ), RankStructureSetting.TwoRanks )] public OppositionFightResolutionRule SergeantBeatsOpposingPrivate;
 
-    [Space( 10 )]
-    public FightTargetRule FightingRule;
+        [Space( 10 )]
+        public OppositionFightResolutionRule GeneralBeatsOpposingGeneral;
+        [VisibleIf( true, nameof ( RankStructure ), RankStructureSetting.TwoRanks )] public OppositionFightResolutionRule GeneralBeatsOpposingSergeant;
+        public OppositionFightResolutionRule GeneralBeatsOpposingPrivate;
 
-    [Space( 10 )] //---------------------------------------------------------------------
-    [Header( "Regular fighting rules", order = 1 )]
+        [VisibleIf( true, nameof( FightingRule ), FightTargetRule.FightEnemiesOnly )] public InternalFightResolutionRule PrivateBeatsOwnGeneral;
+        [VisibleIf( true, nameof( FightingRule ), FightTargetRule.FightEnemiesOnly ),
+         VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )] public InternalFightResolutionRule PrivateBeatsOwnSergeant;
 
-    public OppositionFightResolutionRule PrivateBeatsOpposingGeneral;
+        [Space( 10 )]
 
-    [VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )]
-    public OppositionFightResolutionRule PrivateBeatsOpposingSergeant;
+        [VisibleIf( true, nameof( FightingRule ), FightTargetRule.FightEnemiesOnly ), VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )]
+        public InternalFightResolutionRule SergeantBeatsOwnGeneral;
 
-    public OppositionFightResolutionRule PrivateBeatsOpposingPrivate;
+        public string Serialize ()
+        {
+            return JsonUtility.ToJson( this );
+        }
 
-    [Space( 10 )]
+        public GameRules Deserialize ( string serialized )
+        {
+            return JsonUtility.FromJson< GameRules >( serialized );
+        }
 
-    [VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )] public OppositionFightResolutionRule SergeantBeatsOpposingGeneral;
-    [VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )] public OppositionFightResolutionRule SergeantBeatsOpposingSergeant;
-    [VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )] public OppositionFightResolutionRule SergeantBeatsOpposingPrivate;
+        public void SetChoices ( GameRules other )
+        {
+            UseMaze = other.UseMaze;
+            RankStructure = other.RankStructure;
+            FightingRule = other.FightingRule;
 
-    [Space( 10 )]
+            PrivateBeatsOpposingGeneral = other.PrivateBeatsOpposingGeneral;
+            PrivateBeatsOpposingSergeant = other.PrivateBeatsOpposingSergeant;
+            PrivateBeatsOpposingPrivate = other.PrivateBeatsOpposingPrivate;
 
-    public OppositionFightResolutionRule GeneralBeatsOpposingGeneral;
+            SergeantBeatsOpposingGeneral = other.SergeantBeatsOpposingGeneral;
+            SergeantBeatsOpposingSergeant = other.SergeantBeatsOpposingSergeant;
+            SergeantBeatsOpposingPrivate = other.SergeantBeatsOpposingPrivate;
 
-    [VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )]
-    public OppositionFightResolutionRule GeneralBeatsOpposingSergeant;
+            GeneralBeatsOpposingGeneral = other.GeneralBeatsOpposingGeneral;
+            GeneralBeatsOpposingSergeant = other.GeneralBeatsOpposingSergeant;
+            GeneralBeatsOpposingPrivate = other.GeneralBeatsOpposingPrivate;
 
-    public OppositionFightResolutionRule GeneralBeatsOpposingPrivate;
+            PrivateBeatsOwnGeneral = other.PrivateBeatsOwnGeneral;
+            PrivateBeatsOwnSergeant = other.PrivateBeatsOwnSergeant;
 
-    [Space( 10 )] //---------------------------------------------------------------------
-    [Header( "Internal fighting rules", order = 1 )]
+            SergeantBeatsOwnGeneral = other.SergeantBeatsOwnGeneral;
+        }
+    }
 
-    [VisibleIf( true, nameof( FightingRule ), FightTargetRule.FightEnemiesOnly )]
-    public InternalFightResolutionRule PrivateBeatsOwnGeneral;
-
-    [VisibleIf( true, nameof( FightingRule ), FightTargetRule.FightEnemiesOnly ), VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )]
-    public InternalFightResolutionRule PrivateBeatsOwnSergeant;
-
-    [Space( 10 )]
-
-    [VisibleIf( true, nameof( FightingRule ), FightTargetRule.FightEnemiesOnly ), VisibleIf( true, nameof( RankStructure ), RankStructureSetting.TwoRanks )]
-    public InternalFightResolutionRule SergeantBeatsOwnGeneral;
-
-    //-----------------------------------------------------------------------------------
+    public GameRules GameDesignConfig;
 
 #if UNITY_EDITOR
     public static DesignChoices GetInstanceFromAssets()

@@ -12,17 +12,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9d2ea8293a2d794479fd72bdfc2c5ce2, type: 3}
   m_Name: DesignChoices
   m_EditorClassIdentifier: 
-  RankStructure: 0
-  FightingRule: 1
-  PrivateBeatsOpposingGeneral: 0
-  PrivateBeatsOpposingSergeant: 0
-  PrivateBeatsOpposingPrivate: 0
-  SergeantBeatsOpposingGeneral: 0
-  SergeantBeatsOpposingSergeant: 0
-  SergeantBeatsOpposingPrivate: 0
-  GeneralBeatsOpposingGeneral: 0
-  GeneralBeatsOpposingSergeant: 0
-  GeneralBeatsOpposingPrivate: 0
-  PrivateBeatsOwnGeneral: 0
-  PrivateBeatsOwnSergeant: 0
-  SergeantBeatsOwnGeneral: 0
+  GameDesignConfig:
+    UseMaze: 0
+    RankStructure: 1
+    FightingRule: 0
+    PrivateBeatsOpposingGeneral: 0
+    PrivateBeatsOpposingSergeant: 0
+    PrivateBeatsOpposingPrivate: 0
+    SergeantBeatsOpposingGeneral: 0
+    SergeantBeatsOpposingSergeant: 0
+    SergeantBeatsOpposingPrivate: 0
+    GeneralBeatsOpposingGeneral: 0
+    GeneralBeatsOpposingSergeant: 0
+    GeneralBeatsOpposingPrivate: 0
+    PrivateBeatsOwnGeneral: 0
+    PrivateBeatsOwnSergeant: 0
+    SergeantBeatsOwnGeneral: 0

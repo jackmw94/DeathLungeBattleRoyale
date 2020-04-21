@@ -1,0 +1,6 @@
+Check battles with raycast
+Update line colour based on hit
+
+Check collisions with raycast
+
+Implement design decisions

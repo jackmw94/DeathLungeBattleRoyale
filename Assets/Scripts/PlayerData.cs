@@ -21,6 +21,7 @@ public class PlayerData
         EmpireId = other.EmpireId;
         Rank = other.Rank;
         AllowedMovements = other.AllowedMovements;
+        EmpireSize = other.EmpireSize;
 
         Debug.Log( $"Setting player data for player id {PlayerId}: AllowedMoves={AllowedMovements}, EmpireId={EmpireId}, Rank={Rank}" );
     }

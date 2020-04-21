@@ -69,7 +69,7 @@ public partial class PlayerController
         m_playerData.SetData( playerData );
 
         m_playerColourIndicator.material.color = m_colours.GetPlayerColour( playerData.PlayerId );
-        m_empireColourIndicator.material.color = playerData.EmpireSize > 1 ? m_colours.GetEmpireColour( playerData.EmpireId ) : Color.white;
+        m_empireColourIndicator.material.color = playerData.EmpireSize > 1 ? m_colours.GetPlayerColour( playerData.EmpireId ) : Color.white;
 
         for ( int i = 0; i < m_prestige.Length; i++ )
         {
@@ -81,6 +81,7 @@ public partial class PlayerController
             bool inputEnabled = AllowedMoves > 0;
             Debug.Log( $"Setting player with id {playerData.PlayerId}'s input to be {inputEnabled}" );
             m_playerInput.enabled = inputEnabled;
+            m_yourMoveIndicator.SetActive( AllowedMoves > 0 );
         }
 
         m_movementDisabledUntilDataUpdated = false;
@@ -98,11 +99,5 @@ public partial class PlayerController
         }
 
         // handle rank decor
-    }
-
-    [ClientRpc]
-    public void RpcUpdateDesignConfig ()
-    {
-
     }
 }

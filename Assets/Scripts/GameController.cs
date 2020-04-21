@@ -19,7 +19,7 @@ public class GameController : NetworkBehaviour
     }
 
     [SerializeField] private DesignChoices m_designChoices;
-    [SerializeField] private GameObject m_designChoiceUIRoot;
+    [SerializeField] private DesignChoiceUI m_designChoiceUIRoot;
     [SerializeField] private GameObject m_mazeRoot;
     [SerializeField] private Text m_gameInfoDisplay;
 
@@ -40,6 +40,8 @@ public class GameController : NetworkBehaviour
     private bool m_gameInfoTextChanged = false;
     private string m_gameInfo = "";
 
+    private DesignChoices.GameRules m_gameRules;
+
     private bool m_startedGame = false;
 
     public static GameController Instance { get; private set; }
@@ -49,31 +51,58 @@ public class GameController : NetworkBehaviour
     {
         Instance = this;
         DesignChoices = m_designChoices;
+        m_gameRules = m_designChoices.GameDesignConfig;
+        m_designChoiceUIRoot.Initialise( m_gameRules, UpdateDesignChoices );
     }
-
+    
     private void OnDisable()
     {
         Debug.Log( $"GameController disabling - should be at end of hosted game" );
         m_initialisedServer = false;
-        //m_designChoiceUIRoot.SetActive( false );
+        m_designChoiceUIRoot.gameObject.SetActive( false );
     }
 
     private void Update()
     {
-        if ( !m_startedGame && isServer )
+        if ( !m_startedGame )
         {
-            if ( Input.GetKeyDown( KeyCode.G ) )
+            if ( isServer )
             {
-                //m_designChoiceUIRoot.SetActive( false );
-                m_startedGame = true;
-                StartCoroutine( GameLoop() );
-            }
+                if ( Input.GetKeyDown( KeyCode.G ) )
+                {
+                    m_designChoiceUIRoot.gameObject.SetActive( false );
+                    m_startedGame = true;
+                    StartCoroutine( GameLoop() );
+                }
 
-            if ( !m_initialisedServer )
+                if ( !m_initialisedServer )
+                {
+                    m_initialisedServer = true;
+                    m_designChoiceUIRoot.gameObject.SetActive( true );
+                    CmdSetGameInfoForServerAndClient( $"Press G to start the game ({m_playerCount} players)", $"Waiting for host to start the game ({m_playerCount} players)" );
+                }
+            }
+            else
             {
-                m_initialisedServer = true;
-                //m_designChoiceUIRoot.SetActive( true );
-                CmdSetGameInfoForServerAndClient( $"Press G to start the game ({m_playerCount} players)", $"Waiting for host to start the game ({m_playerCount} players)");
+                if ( m_designChoiceUIRoot.gameObject.activeInHierarchy )
+                {
+                    m_designChoiceUIRoot.gameObject.SetActive( false );
+                }
+            }
+        }
+
+        if ( m_gameRules.UseMaze )
+        {
+            if ( !m_mazeRoot.activeInHierarchy )
+            {
+                m_mazeRoot.SetActive( true );
+            }
+        }
+        else
+        {
+            if ( m_mazeRoot.activeInHierarchy )
+            {
+                m_mazeRoot.SetActive( false );
             }
         }
 
@@ -109,6 +138,9 @@ public class GameController : NetworkBehaviour
 
     private IEnumerator GameLoop()
     {
+        Debug.Log( $"Updating everyone's design choices" );
+        CmdUpdateDesignChoices( m_gameRules.Serialize() );
+
         Debug.Log( $"Starting game loop!" );
         while ( true )
         {
@@ -154,7 +186,7 @@ public class GameController : NetworkBehaviour
 
         SetPlayerEmpire( playerId, playerId );
         UpdateAllPlayerData();
-        
+
         m_playerCount++;
 
         string plural = m_playerCount == 1 ? "" : "s";
@@ -437,7 +469,7 @@ public class GameController : NetworkBehaviour
     {
         var playerData = m_allPlayersData[playerId];
         int previousEmpireId = playerData.EmpireId;
-        
+
         // try remove
         if ( m_playersByEmpire.ContainsKey( playerData.EmpireId ) )
         {
@@ -501,6 +533,23 @@ public class GameController : NetworkBehaviour
         }
 
         UpdateAllPlayerData();
+    }
+
+    private void UpdateDesignChoices( string s )
+    {
+        CmdUpdateDesignChoices( s );
+    }
+
+    [Command]
+    private void CmdUpdateDesignChoices( string s )
+    {
+        RpcUpdateDesignChoices( s );
+    }
+
+    [ClientRpc]
+    private void RpcUpdateDesignChoices( string s )
+    {
+        m_gameRules = DesignChoices.GameDesignConfig.Deserialize( s );
     }
 
     [Command]

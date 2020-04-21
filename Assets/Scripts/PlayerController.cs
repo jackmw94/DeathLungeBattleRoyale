@@ -18,6 +18,8 @@ public partial class PlayerController : NetworkBehaviour
     [SerializeField] private MeshRenderer m_playerColourIndicator;
     [SerializeField] private MeshRenderer m_empireColourIndicator;
 
+    [SerializeField] private GameObject m_yourMoveIndicator;
+
     [SerializeField] private GameObject[] m_prestige;
 
     [SerializeField] private float m_height = 0.4f;
