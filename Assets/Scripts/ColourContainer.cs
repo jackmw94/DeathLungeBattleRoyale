@@ -8,7 +8,7 @@ public class ColourContainer : ScriptableObject
 
     [SerializeField] private Color[] m_empireColours;
 
-    private int m_offset = 2;
+    private int m_offset = 0;
 
     public void ChangeOffset ()
     {

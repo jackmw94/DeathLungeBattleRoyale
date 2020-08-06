@@ -57,7 +57,18 @@ public class GameController : NetworkBehaviour
     
     private void OnDisable()
     {
-        Debug.Log( $"GameController disabling - should be at end of hosted game" );
+        Debug.Log( $"GameController disabling - should be when out of a hosted game" );
+
+        m_playersByEmpire.Clear();
+        m_allPlayers.Clear();
+        m_allPlayersData.Clear();
+        m_battleQueue.Clear();
+        m_requestMovesFromSet.Clear();
+        m_playerCount = 0;
+        m_battleTakingPlace = null;
+
+        m_gameInfoDisplay.text = "";
+        
         m_initialisedServer = false;
         m_designChoiceUIRoot.gameObject.SetActive( false );
     }
@@ -163,11 +174,15 @@ public class GameController : NetworkBehaviour
             // get movement order
             yield return RunPlayerMovement( moves );
 
+            // check for end game state if not then loop
+            if ( m_playersByEmpire.Count == 1 )
+            {
+                CmdSetGameInfo($"Game is over! Final empire owned by player {m_playersByEmpire.Keys.First()}");
+                yield break;
+            }
+
             // wait just for nicer flow
             yield return new WaitForSecondsRealtime( 1.5f );
-
-            // check for end game state
-            // if not then loop
         }
     }
 

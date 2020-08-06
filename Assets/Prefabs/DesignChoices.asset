@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: DesignChoices
   m_EditorClassIdentifier: 
   GameDesignConfig:
-    UseMaze: 0
+    UseMaze: 1
     RankStructure: 1
     FightingRule: 0
     PrivateBeatsOpposingGeneral: 0

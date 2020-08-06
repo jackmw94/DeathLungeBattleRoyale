@@ -71,6 +71,8 @@ public partial class PlayerController
         m_playerColourIndicator.material.color = m_colours.GetPlayerColour( playerData.PlayerId );
         m_empireColourIndicator.material.color = playerData.EmpireSize > 1 ? m_colours.GetPlayerColour( playerData.EmpireId ) : Color.white;
 
+        m_playerNumberText.text = $"Player {playerData.PlayerId}";
+
         for ( int i = 0; i < m_prestige.Length; i++ )
         {
             m_prestige[i].SetActive( i == playerData.Rank && playerData.EmpireSize > 1 );
@@ -81,7 +83,7 @@ public partial class PlayerController
             bool inputEnabled = AllowedMoves > 0;
             Debug.Log( $"Setting player with id {playerData.PlayerId}'s input to be {inputEnabled}" );
             m_playerInput.enabled = inputEnabled;
-            m_yourMoveIndicator.SetActive( AllowedMoves > 0 );
+            m_yourMoveIndicator.SetActive( inputEnabled );
         }
 
         m_movementDisabledUntilDataUpdated = false;

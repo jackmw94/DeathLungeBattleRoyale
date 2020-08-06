@@ -19,6 +19,16 @@ public class DesignChoiceUI : MonoBehaviour
     private DesignChoices.GameRules m_gameRules;
     private Action<string> m_valueChanged;
 
+    //private void Start()
+    //{
+    //    for ( var index = 0; index < m_designChoiceUi.Length; index++ )
+    //    {
+    //        Choice choice = m_designChoiceUi[index];
+    //        choice.ChangeChoice.gameObject.SetActive( false );
+    //        choice.ShowChoice.gameObject.SetActive( false );
+    //    }
+    //}
+
     public void Initialise( DesignChoices.GameRules gameRules, Action<string> valueChangedCallback )
     {
         m_gameRules = gameRules;
@@ -42,6 +52,8 @@ public class DesignChoiceUI : MonoBehaviour
             choice.ChangeChoice.onClick.RemoveAllListeners();
             if ( index == 0 )
             {
+                //choice.ChangeChoice.gameObject.SetActive( true );
+                //choice.ShowChoice.gameObject.SetActive( true );
                 choice.ChangeChoice.onClick.AddListener( () =>
                 {
                     m_gameRules.UseMaze = !m_gameRules.UseMaze;

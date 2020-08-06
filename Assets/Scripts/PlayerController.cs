@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.UI;
 
 public partial class PlayerController : NetworkBehaviour
 {
@@ -19,6 +20,7 @@ public partial class PlayerController : NetworkBehaviour
     [SerializeField] private MeshRenderer m_empireColourIndicator;
 
     [SerializeField] private GameObject m_yourMoveIndicator;
+    [SerializeField] private Text m_playerNumberText;
 
     [SerializeField] private GameObject[] m_prestige;
 
@@ -48,6 +50,7 @@ public partial class PlayerController : NetworkBehaviour
         PlayerCount++;
         m_transform = transform;
         m_transform.position = new Vector3( m_transform.position.x, m_height, m_transform.position.z );
+        m_yourMoveIndicator.SetActive(false);
 
         if ( m_networkIdentity.isLocalPlayer )
         {
